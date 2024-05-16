@@ -1,8 +1,9 @@
-module quadtree
+module github.com/buhtigexa/classificator-service
 
-go 1.22
+go 1.22.2
 
 require (
+	github.com/buhtigexa/naive-bayes v0.0.0-20240520191744-a7033e27b00d
 	google.golang.org/grpc v1.64.0
 	google.golang.org/protobuf v1.34.1
 )

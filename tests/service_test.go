@@ -1,12 +1,14 @@
-package main
+package tests
 
 import (
-	"context"
 	"fmt"
 	bayesService "github.com/buhtigexa/classificator-service/protos"
 	"github.com/buhtigexa/naive-bayes/algorithms/bayes"
+	"github.com/stretchr/testify/assert"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"log"
+	"testing"
 )
 
 func createCorpus() []bayes.Document {
@@ -28,42 +30,42 @@ func createCorpus() []bayes.Document {
 	return corpus
 }
 
-func train(client bayesService.BayesServiceClient) error {
+func TestTrain(t *testing.T) {
+	tearDown, client := setUp()
+	defer tearDown()
 	corpus := createCorpus()
 	stream, err := client.Train(context.Background())
-	if err != nil {
-		return err
-	}
-
+	assert.Nil(t, err)
 	for i := 0; i < len(corpus); i++ {
 		doc := &bayesService.Document{
 			Term:  corpus[i].Terms,
 			Class: corpus[i].Class,
 		}
 		if err := stream.Send(doc); err != nil {
-			return err
+			assert.Nil(t, err)
 		}
 	}
 	response, err := stream.CloseAndRecv()
 	if err != nil {
-		return err
+		assert.Nil(t, err)
 	}
 	fmt.Printf("%v\n", response)
-	return nil
+
 }
 
-func predict(client bayesService.BayesServiceClient) {
-
+func TestPredict(t *testing.T) {
+	tearDown, client := setUp()
+	defer tearDown()
 	waitc := make(chan struct{})
-	doc1 := &bayesService.Document{
+
+	docs := []*bayesService.Document{{
 		Term:  []string{"launch", "money", "money", "money"},
 		Class: "",
-	}
-	doc2 := &bayesService.Document{
+	}, {
 		Term:  []string{"dear", "friend"},
 		Class: "",
-	}
-	docs := []*bayesService.Document{doc1, doc2}
+	}}
+
 	stream, err := client.Predict(context.Background())
 	if err != nil {
 		log.Fatal(err)
@@ -88,16 +90,14 @@ func predict(client bayesService.BayesServiceClient) {
 
 }
 
-func main() {
+func setUp() (func(), bayesService.BayesServiceClient) {
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("Could not connect: %v", err)
 	}
-	defer conn.Close()
-	client := bayesService.NewBayesServiceClient(conn)
-	err = train(client)
-	if err != nil {
-		log.Fatal(err)
+	closeFn := func() {
+		conn.Close()
 	}
-
+	client := bayesService.NewBayesServiceClient(conn)
+	return closeFn, client
 }
