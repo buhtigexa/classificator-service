@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package bayesService;
+
+option go_package = "./proto;bayesService";
+
+service BayesService {
+  rpc SendTerm(TermRequest) returns (TermResponse);
+  // The client streams all the terms that are needed to train the model
+  rpc AddTerm(stream TermRequest) returns (SummaryResponse);
+  rpc Classify(stream DocumentRequest) returns (stream DocumentClassification);
+
+}
+
+message TermRequest {
+  string value = 1;
+}
+
+message TermResponse {
+  string data = 1;
+}
+
+message Class {
+  string label = 1;
+  float priorLikelihood = 2;
+  int32 terms = 3;
+}
+
+message SummaryResponse{
+  repeated Class classes = 1;
+}
+
+message DocumentRequest{
+  string valor = 1;
+}
+
+message DocumentClassification {
+  string resultado = 1;
+}
