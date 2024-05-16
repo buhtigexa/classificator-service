@@ -5,35 +5,40 @@ package bayesService;
 option go_package = "./proto;bayesService";
 
 service BayesService {
-  rpc SendTerm(TermRequest) returns (TermResponse);
-  // The client streams all the terms that are needed to train the model
-  rpc AddTerm(stream TermRequest) returns (SummaryResponse);
-  rpc Classify(stream DocumentRequest) returns (stream DocumentClassification);
-
+  rpc Train(stream Document) returns (TrainResponse);
+  rpc Predict(stream Document) returns (stream Prediction);
 }
 
-message TermRequest {
-  string value = 1;
+message Prediction {
+  string class = 1;
+  double score = 2;
 }
 
-message TermResponse {
-  string data = 1;
+message Document {
+  repeated string term = 1;
+  string class = 2;
 }
 
-message Class {
-  string label = 1;
-  float priorLikelihood = 2;
-  int32 terms = 3;
+message Corpus {
+  repeated Document instances = 1;
 }
 
-message SummaryResponse{
-  repeated Class classes = 1;
+message Metric {
+  int32 frequency = 1;
+  float probability = 2;
 }
 
-message DocumentRequest{
-  string valor = 1;
+
+message class {
+  string id = 1;
+  map<string, Metric> terms = 2;
+  int32 totalWords = 3;
+  int32 totalDocs = 4;
+  float priorProb = 5;
 }
 
-message DocumentClassification {
-  string resultado = 1;
+message TrainResponse {
+  int32 docs = 1;
+  map<string, class> classes = 2;
 }
+

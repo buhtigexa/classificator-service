@@ -1,57 +1,68 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	bayesService "github.com/buhtigexa/classificator-service/protos"
+	bayes "github.com/buhtigexa/naive-bayes/algorithms/bayes"
 	"google.golang.org/grpc"
 	"io"
 	"log"
 	"net"
-	bayesService "quadtree/protos"
-	"strconv"
 )
 
 type Server struct {
 	bayesService.UnimplementedBayesServiceServer
+	nb *bayes.NaiveBayes
 }
 
-func (s *Server) TrainModel(stream bayesService.BayesService_TrainModelServer) error {
-	class := bayesService.Class{
-		Label:           "label",
-		PriorLikelihood: 12.0,
-		Terms:           1321,
-	}
-	classes := []*bayesService.Class{&class}
+func (s *Server) Predict(stream bayesService.BayesService_PredictServer) error {
 	for {
-		data, err := stream.Recv()
-		fmt.Printf("%v", data)
+		doc, err := stream.Recv()
 		if err == io.EOF {
-			return stream.SendAndClose(&bayesService.SummaryResponse{Classes: classes})
+			return nil
 		}
-	}
-
-	return nil
-}
-
-func (s *Server) Classify(stream bayesService.BayesService_ClassifyServer) error {
-	for {
-		data, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		fmt.Printf("[SERVER] Received from client  %s\n", data.Valor)
-
-		for i := 0; i < 3; i++ {
-			fmt.Printf("[SERVER] enviando al client \n")
-			stream.Send(&bayesService.DocumentClassification{Resultado: strconv.Itoa(i) + ") Resultado de clasificacion "})
+		predictions := s.nb.Predict(bayes.NewDocument(doc.Term, ""))
+		for _, p := range predictions {
+			resultPrediction := &bayesService.Prediction{
+				Class: p.Class,
+				Score: p.Prob,
+			}
+			if err := stream.Send(resultPrediction); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func (s *Server) SendTerm(ctx context.Context, request *bayesService.TermRequest) (*bayesService.TermResponse, error) {
-	data := fmt.Sprintf("Hola %s !! ", request.Value)
-	return &bayesService.TermResponse{Data: data}, nil
+func (s *Server) Train(stream bayesService.BayesService_TrainServer) error {
+	var corpus []bayes.Document
+	for {
+		doc, err := stream.Recv()
+		if err == io.EOF {
+			log.Printf(" Error %s\n", err)
+			trainResult := s.nb.Train(corpus)
+			response := to(trainResult)
+			return stream.SendAndClose(response)
+		}
+		corpus = append(corpus, bayes.NewDocument(doc.Term, doc.Class))
+	}
+}
+
+func to(trainResult *bayes.TrainResult) *bayesService.TrainResponse {
+	classes := make(map[string]*bayesService.Class)
+	for k, v := range trainResult.Classes {
+		classes[k] = &bayesService.Class{
+			Id:         v.Id,
+			TotalWords: v.TotalWords,
+			TotalDocs:  int32(v.TotalDocs),
+			PriorProb:  float32(v.PriorProb),
+		}
+	}
+	result := &bayesService.TrainResponse{
+		Docs:    int32(trainResult.Docs),
+		Classes: classes,
+	}
+	return result
 }
 
 func main() {
@@ -60,10 +71,16 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 	s := grpc.NewServer()
-	bayesService.RegisterBayesServiceServer(s, &Server{})
+	bayesService.RegisterBayesServiceServer(s, NewServer())
 	log.Println("Server started on port 50051")
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 
+	}
+}
+
+func NewServer() *Server {
+	return &Server{
+		nb: bayes.NewNaiveBayes(),
 	}
 }
