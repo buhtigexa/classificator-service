@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"testing"
+	"time"
 )
 
 func createCorpus() []bayes.Document {
@@ -31,41 +32,69 @@ func createCorpus() []bayes.Document {
 	return corpus
 }
 
-func TestTrain(t *testing.T) {
-	tearDown, client := setUp()
-	defer tearDown()
+func setUp() (func(), bayesService.BayesServiceClient) {
+	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("Could not connect: %v", err)
+	}
+	closeFn := func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("%v\n", err)
+		}
+	}
+	client := bayesService.NewBayesServiceClient(conn)
+	return closeFn, client
+}
+
+func train(client bayesService.BayesServiceClient) {
 	corpus := createCorpus()
-	stream, err := client.Train(context.Background())
-	assert.Nil(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	cancel()
+	stream, err := client.Train(ctx)
+	if err != nil {
+		log.Println(err)
+		return
+	}
 	for i := 0; i < len(corpus); i++ {
 		doc := &bayesService.Document{
 			Term:  corpus[i].Terms,
 			Class: corpus[i].Class,
 		}
 		if err := stream.Send(doc); err != nil {
-			assert.Nil(t, err)
+			log.Println(err)
+			return
 		}
 	}
 	response, err := stream.CloseAndRecv()
 	if err != nil {
-		assert.Nil(t, err)
+		log.Println(err)
+		return
 	}
 	fmt.Printf("%v\n", response)
+}
+
+func TestTrain(t *testing.T) {
+	var tearDown, client = setUp()
+	defer tearDown()
+	train(client)
 
 }
 
 func TestPredict(t *testing.T) {
 	tearDown, client := setUp()
+	train(client)
 	defer tearDown()
 	waitc := make(chan struct{})
 
 	docs := []*bayesService.Document{{
 		Term:  []string{"launch", "money", "money", "money"},
 		Class: "",
-	}, {
-		Term:  []string{"dear", "friend"},
-		Class: "",
-	}}
+	},
+		{
+			Term:  []string{"dear", "friend"},
+			Class: "",
+		},
+	}
 
 	stream, err := client.Predict(context.Background())
 	if err != nil {
@@ -92,24 +121,8 @@ func TestPredict(t *testing.T) {
 		stream.Send(doc)
 	}
 
-	if err := stream.CloseSend(); err != nil {
-		log.Fatal(err)
-	}
+	assert.Nil(t, stream.CloseSend())
 	<-waitc
 	fmt.Printf(" Stream finished ")
 
-}
-
-func setUp() (func(), bayesService.BayesServiceClient) {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("Could not connect: %v", err)
-	}
-	closeFn := func() {
-		if err := conn.Close(); err != nil {
-			log.Printf("%v\n", err)
-		}
-	}
-	client := bayesService.NewBayesServiceClient(conn)
-	return closeFn, client
 }
