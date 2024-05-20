@@ -12,6 +12,7 @@ service BayesService {
 message Prediction {
   string class = 1;
   double score = 2;
+  repeated string terms = 3;
 }
 
 message Document {

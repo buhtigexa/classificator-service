@@ -4,9 +4,14 @@ import (
 	bayesService "github.com/buhtigexa/classificator-service/protos"
 	bayes "github.com/buhtigexa/naive-bayes/algorithms/bayes"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"io"
 	"log"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 type Server struct {
@@ -20,18 +25,22 @@ func (s *Server) Predict(stream bayesService.BayesService_PredictServer) error {
 		if err == io.EOF {
 			return nil
 		}
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to receive document: %v", err)
+		}
+
 		predictions := s.nb.Predict(bayes.NewDocument(doc.Term, ""))
 		for _, p := range predictions {
 			resultPrediction := &bayesService.Prediction{
 				Class: p.Class,
 				Score: p.Prob,
+				Terms: doc.Term,
 			}
 			if err := stream.Send(resultPrediction); err != nil {
-				return err
+				return status.Errorf(codes.Internal, "failed to send prediction: %v", err)
 			}
 		}
 	}
-	return nil
 }
 
 func (s *Server) Train(stream bayesService.BayesService_TrainServer) error {
@@ -39,10 +48,12 @@ func (s *Server) Train(stream bayesService.BayesService_TrainServer) error {
 	for {
 		doc, err := stream.Recv()
 		if err == io.EOF {
-			log.Printf(" Error %s\n", err)
 			trainResult := s.nb.Train(corpus)
 			response := to(trainResult)
 			return stream.SendAndClose(response)
+		}
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to receive document: %v", err)
 		}
 		corpus = append(corpus, bayes.NewDocument(doc.Term, doc.Class))
 	}
@@ -72,10 +83,18 @@ func main() {
 	}
 	s := grpc.NewServer()
 	bayesService.RegisterBayesServiceServer(s, NewServer())
+
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		<-c
+		log.Println("Shutting down server...")
+		s.GracefulStop()
+	}()
+
 	log.Println("Server started on port 50051")
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
-
 	}
 }
 

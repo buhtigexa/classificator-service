@@ -6,6 +6,7 @@ import (
 	bayesService "github.com/buhtigexa/classificator-service/protos"
 	"github.com/buhtigexa/naive-bayes/algorithms/bayes"
 	"google.golang.org/grpc"
+	"io"
 	"log"
 )
 
@@ -70,15 +71,23 @@ func predict(client bayesService.BayesServiceClient) {
 	}
 	go func() {
 		defer close(waitc)
-		prediction, err := stream.Recv()
-		if err != nil {
-			log.Printf("%s\n", err)
+		for {
+			prediction, err := stream.Recv()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				log.Printf("Failed to receive a prediction: %v", err)
+				break
+			}
+			fmt.Printf("Received prediction: %v\n", prediction)
 		}
-		fmt.Printf("%v\n", prediction)
 	}()
 
 	for _, doc := range docs {
-		stream.Send(doc)
+		if err := stream.Send(doc); err != nil {
+			log.Printf("Failed to send a document: %v", err)
+		}
 	}
 
 	if err := stream.CloseSend(); err != nil {
@@ -87,7 +96,6 @@ func predict(client bayesService.BayesServiceClient) {
 	<-waitc
 
 }
-
 func main() {
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
 	if err != nil {
