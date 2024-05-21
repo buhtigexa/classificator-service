@@ -2,36 +2,40 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
 	bayesService "github.com/buhtigexa/classificator-service/protos"
 	"github.com/buhtigexa/naive-bayes/algorithms/bayes"
 	"google.golang.org/grpc"
 	"io"
 	"log"
+	"os"
 )
 
-func createCorpus() []bayes.Document {
-	doc1 := bayes.NewDocument([]string{"dear", "friend", "launch", "money"}, "normal")
-	doc2 := bayes.NewDocument([]string{"dear", "friend", "launch"}, "normal")
-	doc3 := bayes.NewDocument([]string{"dear", "friend", "launch"}, "normal")
-	doc4 := bayes.NewDocument([]string{"dear", "friend"}, "normal")
-	doc5 := bayes.NewDocument([]string{"dear", "friend"}, "normal")
-	doc6 := bayes.NewDocument([]string{"dear"}, "normal")
-	doc7 := bayes.NewDocument([]string{"dear"}, "normal")
-	doc8 := bayes.NewDocument([]string{"dear"}, "normal")
-
-	doc9 := bayes.NewDocument([]string{"dear", "dear", "friend", "money"}, "spam")
-	doc10 := bayes.NewDocument([]string{"money"}, "spam")
-	doc11 := bayes.NewDocument([]string{"money"}, "spam")
-	doc12 := bayes.NewDocument([]string{"money"}, "spam")
-
-	corpus := []bayes.Document{doc1, doc2, doc3, doc4, doc5, doc6, doc7, doc8, doc9, doc10, doc11, doc12}
-	return corpus
+type Client struct {
+	bayesService.BayesServiceClient
 }
 
-func train(client bayesService.BayesServiceClient) error {
-	corpus := createCorpus()
-	stream, err := client.Train(context.Background())
+func NewClient(conn *grpc.ClientConn) *Client {
+	return &Client{
+		bayesService.NewBayesServiceClient(conn),
+	}
+}
+
+func (c *Client) trainModel(trainPath, savePath string) error {
+	f, err := os.Open(trainPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
+
+	var corpus []bayes.Document
+	if err := dec.Decode(&corpus); err != nil {
+		log.Fatal(err)
+	}
+	stream, err := c.Train(context.Background())
 	if err != nil {
 		return err
 	}
@@ -53,7 +57,7 @@ func train(client bayesService.BayesServiceClient) error {
 	return nil
 }
 
-func predict(client bayesService.BayesServiceClient) {
+func (c *Client) predict(predictPath, dataPath string) {
 
 	waitc := make(chan struct{})
 	doc1 := &bayesService.Document{
@@ -64,8 +68,10 @@ func predict(client bayesService.BayesServiceClient) {
 		Term:  []string{"dear", "friend"},
 		Class: "",
 	}
+
 	docs := []*bayesService.Document{doc1, doc2}
-	stream, err := client.Predict(context.Background())
+
+	stream, err := c.Predict(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -97,15 +103,25 @@ func predict(client bayesService.BayesServiceClient) {
 
 }
 func main() {
+	trainPath := flag.String("train", "", "path to the training dataset")
+	savePath := flag.String("save", "", "path to save the trained model")
+	predictPath := flag.String("predict", "", "path to data to be for prediction")
+
+	flag.Parse()
+
 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("Could not connect: %v", err)
 	}
 	defer conn.Close()
-	client := bayesService.NewBayesServiceClient(conn)
-	err = train(client)
-	if err != nil {
-		log.Fatal(err)
+
+	client := NewClient(conn)
+	if *trainPath != "" && *savePath != "" {
+		client.trainModel(*trainPath, *savePath)
+	} else if *predictPath != "" && *savePath != "" {
+		client.predict(*predictPath, *savePath)
+	} else {
+		log.Fatal("You must provide either training options (-train and -save) or prediction options (-predict and -data).")
 	}
 
 }

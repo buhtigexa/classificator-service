@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"fmt"
 	bayesService "github.com/buhtigexa/classificator-service/protos"
 	"github.com/buhtigexa/naive-bayes/algorithms/bayes"
@@ -9,26 +10,40 @@ import (
 	"google.golang.org/grpc"
 	"io"
 	"log"
+	"os"
 	"testing"
 	"time"
 )
 
 func createCorpus() []bayes.Document {
-	doc1 := bayes.NewDocument([]string{"dear", "friend", "launch", "money"}, "normal")
-	doc2 := bayes.NewDocument([]string{"dear", "friend", "launch"}, "normal")
-	doc3 := bayes.NewDocument([]string{"dear", "friend", "launch"}, "normal")
-	doc4 := bayes.NewDocument([]string{"dear", "friend"}, "normal")
-	doc5 := bayes.NewDocument([]string{"dear", "friend"}, "normal")
-	doc6 := bayes.NewDocument([]string{"dear"}, "normal")
-	doc7 := bayes.NewDocument([]string{"dear"}, "normal")
-	doc8 := bayes.NewDocument([]string{"dear"}, "normal")
+	//doc1 := bayes.NewDocument([]string{"dear", "friend", "launch", "money"}, "normal")
+	//doc2 := bayes.NewDocument([]string{"dear", "friend", "launch"}, "normal")
+	//doc3 := bayes.NewDocument([]string{"dear", "friend", "launch"}, "normal")
+	//doc4 := bayes.NewDocument([]string{"dear", "friend"}, "normal")
+	//doc5 := bayes.NewDocument([]string{"dear", "friend"}, "normal")
+	//doc6 := bayes.NewDocument([]string{"dear"}, "normal")
+	//doc7 := bayes.NewDocument([]string{"dear"}, "normal")
+	//doc8 := bayes.NewDocument([]string{"dear"}, "normal")
+	//
+	//doc9 := bayes.NewDocument([]string{"dear", "dear", "friend", "money"}, "spam")
+	//doc10 := bayes.NewDocument([]string{"money"}, "spam")
+	//doc11 := bayes.NewDocument([]string{"money"}, "spam")
+	//doc12 := bayes.NewDocument([]string{"money"}, "spam")
+	//
+	//corpus := []bayes.Document{doc1, doc2, doc3, doc4, doc5, doc6, doc7, doc8, doc9, doc10, doc11, doc12}
+	//
+	f, err := os.Open("corpus.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
 
-	doc9 := bayes.NewDocument([]string{"dear", "dear", "friend", "money"}, "spam")
-	doc10 := bayes.NewDocument([]string{"money"}, "spam")
-	doc11 := bayes.NewDocument([]string{"money"}, "spam")
-	doc12 := bayes.NewDocument([]string{"money"}, "spam")
+	var corpus []bayes.Document
+	if err := dec.Decode(&corpus); err != nil {
+		log.Fatal(err)
+	}
 
-	corpus := []bayes.Document{doc1, doc2, doc3, doc4, doc5, doc6, doc7, doc8, doc9, doc10, doc11, doc12}
 	return corpus
 }
 
@@ -65,6 +80,7 @@ func train(client bayesService.BayesServiceClient) {
 			return
 		}
 	}
+
 	response, err := stream.CloseAndRecv()
 	if err != nil {
 		log.Println(err)
